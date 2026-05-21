@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 
-// Fix default Leaflet icon paths
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png'
 import iconNormal from 'leaflet/dist/images/marker-icon.png'
 import shadow from 'leaflet/dist/images/marker-shadow.png'
@@ -18,7 +17,6 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom icons based on service type
 const getCustomIcon = (type, selected = false) => {
   let color = 'blue'
   if (type === 'hospital' || type === 'ambulance') color = 'red'
@@ -26,14 +24,14 @@ const getCustomIcon = (type, selected = false) => {
   if (type === 'fire_station') color = 'orange'
   if (type === 'towing') color = 'grey'
   if (type === 'user') color = 'green'
-  
-  // A simple SVG string icon
+  if (type === 'victim') color = '#dc2626'
+
   const svg = `
     <svg width="${selected ? 30 : 24}" height="${selected ? 44 : 36}" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 0C5.383 0 0 5.383 0 12c0 9 12 24 12 24s12-15 12-24c0-6.617-5.383-12-12-12z" fill="${color}"/>
       <circle cx="12" cy="12" r="${selected ? 6 : 5}" fill="white"/>
     </svg>`
-    
+
   return L.divIcon({
     className: selected ? 'custom-icon selected-marker' : 'custom-icon',
     html: svg,
@@ -53,8 +51,7 @@ const tileThemes = {
   }
 }
 
-// Map updater component to fit loaded results or fly to the active search center.
-function MapUpdater({ center, results, selectedResult }) {
+function MapUpdater({ center, results, selectedResult, fitPoints }) {
   const map = useMap();
   useEffect(() => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -67,8 +64,11 @@ function MapUpdater({ center, results, selectedResult }) {
       return
     }
 
-    if (results.length > 0) {
-      const points = results.map((res) => [res.lat, res.lng])
+    const points = fitPoints?.length
+      ? fitPoints.map((p) => [p.lat, p.lng])
+      : results.map((res) => [res.lat, res.lng])
+
+    if (points.length > 0) {
       const bounds = L.latLngBounds(points)
       map.fitBounds(bounds, {
         animate: !reduceMotion,
@@ -83,7 +83,7 @@ function MapUpdater({ center, results, selectedResult }) {
       animate: !reduceMotion,
       duration: reduceMotion ? 0 : 0.8
     });
-  }, [center, results, selectedResult, map]);
+  }, [center, results, selectedResult, fitPoints, map]);
   return null;
 }
 
@@ -91,25 +91,43 @@ export default function MapComponent({
   center,
   results,
   userLoc,
+  victimPin,
   theme = 'dark',
   selectedResult,
   onSelectResult,
-  getDirectionsUrl
+  getDirectionsUrl,
+  showLegend = false,
+  legendSlot,
 }) {
   const tiles = tileThemes[theme] || tileThemes.dark
 
+  const fitPoints = [
+    ...(victimPin ? [victimPin] : []),
+    ...(userLoc ? [userLoc] : []),
+    ...results,
+  ]
+
   return (
     <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-      {/* Theme-aware tiles from CartoDB */}
       <TileLayer
         key={theme}
         url={tiles.url}
         attribution={tiles.attribution}
       />
-      <MapUpdater center={center} results={results} selectedResult={selectedResult} />
-      
-      {/* User Location */}
-      {userLoc && (
+      <MapUpdater
+        center={center}
+        results={results}
+        selectedResult={selectedResult}
+        fitPoints={fitPoints}
+      />
+
+      {victimPin && (
+        <Marker position={[victimPin.lat, victimPin.lng]} icon={getCustomIcon('victim', true)}>
+          <Popup>{victimPin.label || 'Emergency location shared'}</Popup>
+        </Marker>
+      )}
+
+      {userLoc && !victimPin && (
         <>
           <Marker position={[userLoc.lat, userLoc.lng]} icon={getCustomIcon('user')}>
             <Popup>You are here</Popup>
@@ -118,7 +136,6 @@ export default function MapComponent({
         </>
       )}
 
-      {/* Results Markers */}
       {results.map((res) => (
         <Marker
           key={res.id}
@@ -145,6 +162,8 @@ export default function MapComponent({
           </Popup>
         </Marker>
       ))}
+
+      {showLegend && legendSlot}
     </MapContainer>
   )
 }

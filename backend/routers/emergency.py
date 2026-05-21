@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, not_, or_
 from geoalchemy2.functions import ST_GeogFromText
@@ -6,8 +6,15 @@ from sqlalchemy.sql import func
 
 from models.database import get_db
 from models.models import ServiceLocation
-from models.schemas import LocationRequest, NearbyResponse, ServiceResponse
+from models.schemas import (
+    LocationRequest,
+    NearbyResponse,
+    ServiceResponse,
+    CountryEmergencyResponse,
+)
 from services.overpass import fetch_emergency_services
+from services.emergency_numbers import ACCIDENT_SERVICE_TYPES, get_emergency_numbers
+from services.reverse_geocode import reverse_geocode
 
 router = APIRouter(
     prefix="/emergency",
@@ -43,7 +50,7 @@ def apply_emergency_hospital_filter(query):
     )))
 
 
-def query_nearby_services(req: LocationRequest, db: Session):
+def query_nearby_services(req: LocationRequest, db: Session, service_type=None):
     target_point = ST_GeogFromText(f'SRID=4326;POINT({req.lng} {req.lat})')
     radius_meters = req.radius_km * 1000
     distance_col = func.ST_Distance(ServiceLocation.geom, target_point).label('distance_meters')
@@ -51,18 +58,20 @@ def query_nearby_services(req: LocationRequest, db: Session):
     query = db.query(ServiceLocation, distance_col)
     query = query.filter(func.ST_DWithin(ServiceLocation.geom, target_point, radius_meters))
 
-    if req.types and len(req.types) > 0:
-        query = query.filter(ServiceLocation.type.in_(req.types))
+    types_filter = [service_type] if service_type else req.types
+    if types_filter and len(types_filter) > 0:
+        query = query.filter(ServiceLocation.type.in_(types_filter))
 
-    if not req.types or "hospital" in req.types:
+    if not types_filter or "hospital" in types_filter:
         query = apply_emergency_hospital_filter(query)
 
     query = query.order_by(ServiceLocation.geom.distance_centroid(target_point))
-    return query.limit(50).all()
+    limit = req.per_type_limit if req.accident_mode and req.per_type_limit else 50
+    return query.limit(limit).all()
 
 
 def cache_services_from_overpass(req: LocationRequest, db: Session):
-    requested_types = set(req.types or [])
+    requested_types = set(req.types or ACCIDENT_SERVICE_TYPES)
     fetched_services = fetch_emergency_services(req.lat, req.lng, req.radius_km)
     added = 0
 
@@ -115,19 +124,62 @@ def to_nearby_response(results):
     )
 
 
+def fetch_accident_bundle(req: LocationRequest, db: Session):
+    types = req.types or ACCIDENT_SERVICE_TYPES
+    per_limit = req.per_type_limit or 2
+    all_results = []
+
+    for service_type in types:
+        type_req = LocationRequest(
+            lat=req.lat,
+            lng=req.lng,
+            radius_km=req.radius_km,
+            types=[service_type],
+            accident_mode=True,
+            per_type_limit=per_limit,
+        )
+        results = query_nearby_services(type_req, db, service_type=service_type)
+        all_results.extend(results)
+
+    return all_results
+
+
+def fetch_nearby_with_fallback(req: LocationRequest, db: Session):
+    if req.accident_mode:
+        results = fetch_accident_bundle(req, db)
+        if not results:
+            cache_services_from_overpass(req, db)
+            results = fetch_accident_bundle(req, db)
+        return results
+
+    results = query_nearby_services(req, db)
+    if not results:
+        cache_services_from_overpass(req, db)
+        results = query_nearby_services(req, db)
+    return results
+
+
+@router.get("/country", response_model=CountryEmergencyResponse)
+def get_country_emergency(lat: float = Query(...), lng: float = Query(...)):
+    """Return emergency phone numbers for the country at the given coordinates."""
+    geo = reverse_geocode(lat, lng)
+    return get_emergency_numbers(geo["country_code"])
+
+
 @router.post("/nearby", response_model=NearbyResponse)
 def get_nearby_services(req: LocationRequest, db: Session = Depends(get_db)):
     """
     Find emergency services near the given latitude and longitude.
     Uses the DB first, then fetches and caches fresh OpenStreetMap data on demand.
+    When accident_mode is true, returns up to per_type_limit results per service type.
     """
     try:
-        results = query_nearby_services(req, db)
+        if req.accident_mode and not req.types:
+            req = req.model_copy(update={"types": ACCIDENT_SERVICE_TYPES})
+        if req.accident_mode and req.per_type_limit is None:
+            req = req.model_copy(update={"per_type_limit": 2})
 
-        if not results:
-            cache_services_from_overpass(req, db)
-            results = query_nearby_services(req, db)
-
+        results = fetch_nearby_with_fallback(req, db)
         return to_nearby_response(results)
 
     except Exception as e:

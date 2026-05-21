@@ -10,17 +10,19 @@ The app extracts the needed service and location, geocodes the place in India, f
 
 ## Features
 
-- AI chatbot for accident and emergency requests.
+- **Accident Mode** — one message (e.g. *"I just had an accident"*) loads nearest hospital, ambulance, police, and tow on the map, grouped and color-coded.
+- **Share emergency location** — shareable link `/emergency?lat=…&lng=…` for family to open your pin and nearest services.
+- **Golden-hour guidance** — curated steps after an accident (108/112 in India, 911 in US, etc.).
+- **Offline SOS card** — printable card with cached nearest service phone numbers.
+- **Country emergency numbers** — `GET /emergency/country` detects country from coordinates; SOS button and map overlay use the correct numbers.
+- AI chatbot for single-service and accident requests.
 - India place-name geocoding with Nominatim.
 - Nearby emergency service search with PostgreSQL/PostGIS.
 - On-demand OpenStreetMap Overpass fetch and local database caching.
 - Emergency hospital filtering to reduce irrelevant clinics and specialty facilities.
 - Interactive Leaflet map with result selection, marker popups, and Google Maps directions.
-- SOS button that directly dials `112`, India's national emergency number.
 - Mobile-friendly Chat/Map tabs at small widths.
-- Loading skeleton cards during fetches.
 - Light/dark theme toggle with saved preference.
-- Keyboard-focusable controls and ARIA labels.
 - PWA service worker for cached emergency API responses.
 
 ## Tech Stack
@@ -165,12 +167,28 @@ show hospitals near Velachery
 ```
 
 ```text
-I had an accident near IIT Madras Chennai and need an ambulance
+I just had an accident
 ```
 
-5. Select a result on the map or in the results list.
-6. Use `Directions` to open Google Maps navigation or `Call` where a phone number exists.
-7. Use the SOS button to dial `112`.
+5. Accident Mode shows hospital, ambulance, police, and tow together on the map.
+6. Use **Share location** to copy a link like `http://localhost:5173/emergency?lat=12.97&lng=77.59`.
+7. Use **Offline SOS Card** to print cached phone numbers.
+8. Use `Directions` or `Call` on any result. The SOS button uses your country's emergency number (108/112 in India).
+
+### Frontend environment
+
+Optional `.env` in `frontend/`:
+
+```text
+VITE_API_URL=http://localhost:8000
+```
+
+### SPA routing (share links)
+
+For `/emergency` to work in production, configure your host to serve `index.html` for all routes:
+
+- **Vercel:** `frontend/vercel.json` is included.
+- **Netlify:** `frontend/public/_redirects` is included.
 
 ## API Endpoints
 
@@ -179,7 +197,23 @@ I had an accident near IIT Madras Chennai and need an ambulance
 | `GET` | `/health` | Backend health check |
 | `POST` | `/chat/` | Parse natural language emergency request |
 | `GET` | `/geocode/?q=Velachery` | Convert an India place name to coordinates |
+| `GET` | `/emergency/country?lat=&lng=` | Emergency numbers for country at coordinates |
 | `POST` | `/emergency/nearby` | Find nearby services by coordinates and type |
+
+Accident bundle example:
+
+```powershell
+curl -X POST http://localhost:8000/emergency/nearby `
+  -H "Content-Type: application/json" `
+  -d '{
+    "lat": 12.9716,
+    "lng": 77.5946,
+    "radius_km": 15,
+    "accident_mode": true,
+    "per_type_limit": 2,
+    "types": ["hospital", "ambulance", "police", "towing"]
+  }'
+```
 
 Example nearby request:
 
@@ -199,7 +233,8 @@ curl -X POST http://localhost:8000/emergency/nearby `
 - Emergency hospital results intentionally filter out many routine clinics and specialty facilities, such as dental, skin, eye, fertility, physiotherapy, and veterinary clinics.
 - Directions use Google Maps URL navigation and include the user's browser geolocation as origin when available.
 - The frontend can run without a backend for layout preview, but chatbot searches require the FastAPI server.
-- The SOS link uses `tel:112`; desktop browsers may show a handler prompt, while mobile browsers can open the phone dialer.
+- The SOS button dials the ambulance number for your detected country (108 in India, 911 in US, etc.).
+- Share links require SPA fallback on deploy; see above.
 
 ## License
 
