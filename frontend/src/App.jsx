@@ -1,9 +1,46 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, AlertTriangle } from 'lucide-react'
+import { Send, AlertTriangle, Map, MessageCircle, Moon, Navigation, Sun } from 'lucide-react'
 import axios from 'axios'
 import MapComponent from './components/Map.jsx'
 
 const API_URL = 'http://localhost:8000'
+const DEFAULT_CENTER = [20.5937, 78.9629]
+
+function getInitialTheme() {
+  const savedTheme = localStorage.getItem('roadsos-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function ResultSkeletons() {
+  return (
+    <div className="results-container" aria-label="Loading nearby services" aria-live="polite">
+      {[0, 1, 2].map((item) => (
+        <div className="result-card skeleton-card" key={item}>
+          <div className="skeleton-copy">
+            <span className="skeleton-line skeleton-title" />
+            <span className="skeleton-line skeleton-meta" />
+          </div>
+          <span className="skeleton-button" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function getDirectionsUrl(destination, userLoc) {
+  const params = new URLSearchParams({
+    api: '1',
+    destination: `${destination.lat},${destination.lng}`,
+    travelmode: 'driving'
+  })
+
+  if (userLoc) {
+    params.set('origin', `${userLoc.lat},${userLoc.lng}`)
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`
+}
 
 function App() {
   const [messages, setMessages] = useState([
@@ -11,9 +48,18 @@ function App() {
   ])
   const [input, setInput] = useState('')
   const [results, setResults] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [activeMobileView, setActiveMobileView] = useState('chat')
+  const [theme, setTheme] = useState(getInitialTheme)
   const [userLoc, setUserLoc] = useState(null)
-  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]) // Default India
+  const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER)
+  const [selectedResultId, setSelectedResultId] = useState(null)
   const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('roadsos-theme', theme)
+  }, [theme])
 
   // Get user location on mount
   useEffect(() => {
@@ -37,11 +83,15 @@ function App() {
 
   const handleSend = async (e) => {
     e.preventDefault()
-    if (!input.trim()) return
+    if (!input.trim() || isLoading) return
 
     const userText = input.trim()
     setMessages(prev => [...prev, { id: Date.now(), text: userText, sender: 'user' }])
     setInput('')
+    setIsLoading(true)
+    setResults([])
+    setSelectedResultId(null)
+    setActiveMobileView('chat')
 
     try {
       // 1. Send to Chat endpoint
@@ -66,50 +116,137 @@ function App() {
           types: [suggested_action.service_type]
         })
         
-        setResults(nearbyRes.data.services)
+        const services = nearbyRes.data.services
+        setResults(services)
+        setSelectedResultId(services[0]?.id ?? null)
+        setActiveMobileView('map')
       } else {
         setResults([])
       }
-    } catch (err) {
+    } catch {
       setMessages(prev => [...prev, { id: Date.now()+2, text: "Sorry, I am having trouble connecting to the server.", sender: 'bot' }])
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleSOS = () => {
-    // 112 is the National Emergency Number in India
-    window.location.href = "tel:112"
+  const toggleTheme = () => {
+    setTheme(current => current === 'dark' ? 'light' : 'dark')
   }
 
+  const selectResult = (result) => {
+    setSelectedResultId(result.id)
+    setMapCenter([result.lat, result.lng])
+    setActiveMobileView('map')
+  }
+
+  const selectedResult = results.find((result) => result.id === selectedResultId) ?? null
+
   return (
-    <div className="app-container">
+    <div className="app-container" data-mobile-view={activeMobileView}>
       {/* Sidebar Chat */}
-      <div className="chat-panel">
+      <section className="chat-panel" aria-label="RoadSoS chatbot">
         <div className="chat-header">
-          <AlertTriangle color="#ef4444" size={28} />
-          <h1>RoadSoS</h1>
+          <div className="brand-lockup">
+            <AlertTriangle color="#ef4444" size={28} aria-hidden="true" />
+            <h1>RoadSoS</h1>
+          </div>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+          </button>
+        </div>
+
+        <div className="mobile-tabs" role="tablist" aria-label="Mobile view">
+          <button
+            type="button"
+            className={activeMobileView === 'chat' ? 'mobile-tab active' : 'mobile-tab'}
+            onClick={() => setActiveMobileView('chat')}
+            role="tab"
+            aria-selected={activeMobileView === 'chat'}
+            aria-controls="chat-view"
+          >
+            <MessageCircle size={16} aria-hidden="true" />
+            Chat
+          </button>
+          <button
+            type="button"
+            className={activeMobileView === 'map' ? 'mobile-tab active' : 'mobile-tab'}
+            onClick={() => setActiveMobileView('map')}
+            role="tab"
+            aria-selected={activeMobileView === 'map'}
+            aria-controls="map-view"
+          >
+            <Map size={16} aria-hidden="true" />
+            Map
+          </button>
         </div>
         
-        <div className="chat-messages">
+        <div className="chat-messages" id="chat-view" role="log" aria-live="polite" aria-label="Conversation">
           {messages.map(msg => (
             <div key={msg.id} className={`message ${msg.sender}`}>
               {msg.text}
             </div>
           ))}
+          {isLoading && <div className="message bot loading-message">Finding nearby services...</div>}
           <div ref={messagesEndRef} />
         </div>
         
-        {results.length > 0 && (
-          <div className="results-container">
+        {isLoading ? (
+          <ResultSkeletons />
+        ) : results.length > 0 && (
+          <div className="results-container" aria-label="Nearby service results">
             {results.map(res => (
-              <div key={res.id} className="result-card">
+              <article
+                key={res.id}
+                className={selectedResultId === res.id ? 'result-card selected' : 'result-card'}
+                onClick={() => selectResult(res)}
+              >
                 <div className="result-info">
                   <h3>{res.name}</h3>
                   <p>{(res.distance_meters / 1000).toFixed(1)} km away</p>
                 </div>
-                {res.phone && (
-                  <a href={`tel:${res.phone}`} className="call-btn">Call</a>
-                )}
-              </div>
+                <div className="result-actions">
+                  <button
+                    type="button"
+                    className="view-btn"
+                    aria-pressed={selectedResultId === res.id}
+                    aria-label={`View ${res.name} on map`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      selectResult(res)
+                    }}
+                  >
+                    <Map size={15} aria-hidden="true" />
+                    View
+                  </button>
+                  <a
+                    href={getDirectionsUrl(res, userLoc)}
+                    className="directions-btn"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Get directions to ${res.name}`}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Navigation size={15} aria-hidden="true" />
+                    Directions
+                  </a>
+                  {res.phone && (
+                    <a
+                      href={`tel:${res.phone}`}
+                      className="call-btn"
+                      aria-label={`Call ${res.name}`}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      Call
+                    </a>
+                  )}
+                </div>
+              </article>
             ))}
           </div>
         )}
@@ -122,23 +259,33 @@ function App() {
               placeholder="E.g., I need an ambulance nearby..."
               value={input}
               onChange={e => setInput(e.target.value)}
+              aria-label="Emergency message"
+              disabled={isLoading}
             />
-            <button type="submit" className="send-btn">
-              <Send size={18} />
+            <button type="submit" className="send-btn" aria-label="Send emergency message" disabled={isLoading}>
+              <Send size={18} aria-hidden="true" />
             </button>
           </form>
         </div>
-      </div>
+      </section>
 
       {/* Map Area */}
-      <div className="map-container">
-        <MapComponent center={mapCenter} results={results} userLoc={userLoc} />
+      <div className="map-container" id="map-view" role="region" aria-label="Emergency services map">
+        <MapComponent
+          center={mapCenter}
+          results={results}
+          userLoc={userLoc}
+          theme={theme}
+          selectedResult={selectedResult}
+          onSelectResult={selectResult}
+          getDirectionsUrl={(result) => getDirectionsUrl(result, userLoc)}
+        />
       </div>
 
       {/* Panic Button */}
-      <button className="sos-button" onClick={handleSOS}>
+      <a className="sos-button" href="tel:112" aria-label="Call India's national emergency number 112">
         SOS
-      </button>
+      </a>
     </div>
   )
 }

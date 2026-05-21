@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, not_, or_
 from geoalchemy2.functions import ST_GeogFromText
 from sqlalchemy.sql import func
 
@@ -13,6 +14,34 @@ router = APIRouter(
     tags=["Emergency Services"]
 )
 
+NON_EMERGENCY_HOSPITAL_NAME_KEYWORDS = (
+    "ayurveda",
+    "ayurvedic",
+    "clinic",
+    "cosmetic",
+    "dental",
+    "derma",
+    "eye",
+    "fertility",
+    "homeopathy",
+    "ivf",
+    "physio",
+    "skin",
+    "veterinary",
+)
+
+
+def apply_emergency_hospital_filter(query):
+    specialty_name_match = or_(*[
+        ServiceLocation.name.ilike(f"%{keyword}%")
+        for keyword in NON_EMERGENCY_HOSPITAL_NAME_KEYWORDS
+    ])
+
+    return query.filter(not_(and_(
+        ServiceLocation.type == "hospital",
+        specialty_name_match,
+    )))
+
 
 def query_nearby_services(req: LocationRequest, db: Session):
     target_point = ST_GeogFromText(f'SRID=4326;POINT({req.lng} {req.lat})')
@@ -24,6 +53,9 @@ def query_nearby_services(req: LocationRequest, db: Session):
 
     if req.types and len(req.types) > 0:
         query = query.filter(ServiceLocation.type.in_(req.types))
+
+    if not req.types or "hospital" in req.types:
+        query = apply_emergency_hospital_filter(query)
 
     query = query.order_by(ServiceLocation.geom.distance_centroid(target_point))
     return query.limit(50).all()
