@@ -1,0 +1,38 @@
+{
+  "IN": {
+    "country_name": "India",
+    "police": "112",
+    "ambulance": "108",
+    "fire": "101"
+  },
+  "US": {
+    "country_name": "United States",
+    "police": "911",
+    "ambulance": "911",
+    "fire": "911"
+  },
+  "GB": {
+    "country_name": "United Kingdom",
+    "police": "999",
+    "ambulance": "999",
+    "fire": "999"
+  },
+  "AU": {
+    "country_name": "Australia",
+    "police": "000",
+    "ambulance": "000",
+    "fire": "000"
+  },
+  "CA": {
+    "country_name": "Canada",
+    "police": "911",
+    "ambulance": "911",
+    "fire": "911"
+  },
+  "DEFAULT": {
+    "country_name": "International",
+    "police": "112",
+    "ambulance": "112",
+    "fire": "112"
+  }
+}

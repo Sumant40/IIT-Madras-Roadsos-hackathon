@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 
-// Fix default Leaflet icon paths
 import iconRetina from 'leaflet/dist/images/marker-icon-2x.png'
 import iconNormal from 'leaflet/dist/images/marker-icon.png'
 import shadow from 'leaflet/dist/images/marker-shadow.png'
@@ -18,51 +17,117 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom icons based on service type
-const getCustomIcon = (type) => {
+const getCustomIcon = (type, selected = false) => {
   let color = 'blue'
   if (type === 'hospital' || type === 'ambulance') color = 'red'
   if (type === 'police') color = 'blue'
   if (type === 'fire_station') color = 'orange'
   if (type === 'towing') color = 'grey'
   if (type === 'user') color = 'green'
-  
-  // A simple SVG string icon
+  if (type === 'victim') color = '#dc2626'
+
   const svg = `
-    <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+    <svg width="${selected ? 30 : 24}" height="${selected ? 44 : 36}" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 0C5.383 0 0 5.383 0 12c0 9 12 24 12 24s12-15 12-24c0-6.617-5.383-12-12-12z" fill="${color}"/>
-      <circle cx="12" cy="12" r="5" fill="white"/>
+      <circle cx="12" cy="12" r="${selected ? 6 : 5}" fill="white"/>
     </svg>`
-    
+
   return L.divIcon({
-    className: 'custom-icon',
+    className: selected ? 'custom-icon selected-marker' : 'custom-icon',
     html: svg,
-    iconSize: [24, 36],
-    iconAnchor: [12, 36]
+    iconSize: selected ? [30, 44] : [24, 36],
+    iconAnchor: selected ? [15, 44] : [12, 36]
   })
 }
 
-// Map updater component to fly to new center
-function MapUpdater({ center }) {
+const tileThemes = {
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://carto.com/">CartoDB</a>'
+  },
+  light: {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://carto.com/">CartoDB</a>'
+  }
+}
+
+function MapUpdater({ center, results, selectedResult, fitPoints }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(center, 13, { animate: true });
-  }, [center, map]);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (selectedResult) {
+      map.flyTo([selectedResult.lat, selectedResult.lng], 16, {
+        animate: !reduceMotion,
+        duration: reduceMotion ? 0 : 0.7
+      })
+      return
+    }
+
+    const points = fitPoints?.length
+      ? fitPoints.map((p) => [p.lat, p.lng])
+      : results.map((res) => [res.lat, res.lng])
+
+    if (points.length > 0) {
+      const bounds = L.latLngBounds(points)
+      map.fitBounds(bounds, {
+        animate: !reduceMotion,
+        duration: reduceMotion ? 0 : 0.8,
+        maxZoom: 15,
+        padding: [48, 48]
+      })
+      return
+    }
+
+    map.flyTo(center, 13, {
+      animate: !reduceMotion,
+      duration: reduceMotion ? 0 : 0.8
+    });
+  }, [center, results, selectedResult, fitPoints, map]);
   return null;
 }
 
-export default function MapComponent({ center, results, userLoc }) {
+export default function MapComponent({
+  center,
+  results,
+  userLoc,
+  victimPin,
+  theme = 'dark',
+  selectedResult,
+  onSelectResult,
+  getDirectionsUrl,
+  showLegend = false,
+  legendSlot,
+}) {
+  const tiles = tileThemes[theme] || tileThemes.dark
+
+  const fitPoints = [
+    ...(victimPin ? [victimPin] : []),
+    ...(userLoc ? [userLoc] : []),
+    ...results,
+  ]
+
   return (
     <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-      {/* Dark theme tiles from CartoDB */}
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
+        key={theme}
+        url={tiles.url}
+        attribution={tiles.attribution}
       />
-      <MapUpdater center={center} />
-      
-      {/* User Location */}
-      {userLoc && (
+      <MapUpdater
+        center={center}
+        results={results}
+        selectedResult={selectedResult}
+        fitPoints={fitPoints}
+      />
+
+      {victimPin && (
+        <Marker position={[victimPin.lat, victimPin.lng]} icon={getCustomIcon('victim', true)}>
+          <Popup>{victimPin.label || 'Emergency location shared'}</Popup>
+        </Marker>
+      )}
+
+      {userLoc && !victimPin && (
         <>
           <Marker position={[userLoc.lat, userLoc.lng]} icon={getCustomIcon('user')}>
             <Popup>You are here</Popup>
@@ -71,19 +136,34 @@ export default function MapComponent({ center, results, userLoc }) {
         </>
       )}
 
-      {/* Results Markers */}
       {results.map((res) => (
-        <Marker key={res.id} position={[res.lat, res.lng]} icon={getCustomIcon(res.type)}>
+        <Marker
+          key={res.id}
+          position={[res.lat, res.lng]}
+          icon={getCustomIcon(res.type, selectedResult?.id === res.id)}
+          eventHandlers={{
+            click: () => onSelectResult?.(res)
+          }}
+        >
           <Popup>
-            <div style={{ color: '#0f172a' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '14px' }}>{res.name}</h3>
-              <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>Type: {res.type}</p>
-              <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>{(res.distance_meters / 1000).toFixed(1)} km</p>
-              {res.phone && <a href={`tel:${res.phone}`} style={{ color: '#22c55e', fontWeight: 'bold' }}>Call {res.phone}</a>}
+            <div className="map-popup">
+              <h3>{res.name}</h3>
+              <p>Type: {res.type}</p>
+              <p>{(res.distance_meters / 1000).toFixed(1)} km away</p>
+              <div className="map-popup-actions">
+                {getDirectionsUrl && (
+                  <a href={getDirectionsUrl(res)} target="_blank" rel="noreferrer">
+                    Directions
+                  </a>
+                )}
+                {res.phone && <a href={`tel:${res.phone}`}>Call {res.phone}</a>}
+              </div>
             </div>
           </Popup>
         </Marker>
       ))}
+
+      {showLegend && legendSlot}
     </MapContainer>
   )
 }

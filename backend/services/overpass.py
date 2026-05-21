@@ -6,6 +6,42 @@ logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "http://overpass-api.de/api/interpreter"
 
+EMERGENCY_ENABLED_VALUES = {"yes", "designated", "official"}
+NON_EMERGENCY_VALUES = {"no", "none", "private"}
+NON_EMERGENCY_SPECIALTIES = {
+    "audiology",
+    "ayurveda",
+    "beauty",
+    "cosmetic",
+    "dental",
+    "dermatology",
+    "dentist",
+    "fertility",
+    "homeopathy",
+    "naturopathy",
+    "nutrition",
+    "ophthalmology",
+    "optometry",
+    "physiotherapy",
+    "skin",
+    "veterinary",
+}
+NON_EMERGENCY_NAME_KEYWORDS = (
+    "ayurveda",
+    "ayurvedic",
+    "clinic",
+    "cosmetic",
+    "dental",
+    "derma",
+    "eye",
+    "fertility",
+    "homeopathy",
+    "ivf",
+    "physio",
+    "skin",
+    "veterinary",
+)
+
 def get_bbox(lat: float, lng: float, radius_km: float):
     # Rough approximation for bounding box: 1 deg ~ 111km
     delta = radius_km / 111.0
@@ -17,6 +53,39 @@ def get_bbox(lat: float, lng: float, radius_km: float):
     min_lng, max_lng = lng - delta_lng, lng + delta_lng
     
     return f"{min_lat},{min_lng},{max_lat},{max_lng}"
+
+
+def is_emergency_care_candidate(tags: Dict) -> bool:
+    """
+    Keep hospitals useful for accidents/emergencies and drop routine clinics.
+    OSM data is uneven, so this combines explicit emergency tags with conservative
+    name/specialty filtering.
+    """
+    amenity = tags.get("amenity", "")
+    healthcare = tags.get("healthcare", "")
+    emergency = tags.get("emergency", "").lower()
+    name = tags.get("name", tags.get("name:en", "")).lower()
+    specialties = " ".join(
+        str(tags.get(key, "")).lower()
+        for key in ("healthcare:speciality", "speciality", "medical_system")
+    )
+
+    if emergency in NON_EMERGENCY_VALUES:
+        return False
+
+    if emergency in EMERGENCY_ENABLED_VALUES or healthcare == "emergency":
+        return True
+
+    if amenity == "clinic" or healthcare == "clinic":
+        return False
+
+    if any(specialty in specialties for specialty in NON_EMERGENCY_SPECIALTIES):
+        return False
+
+    if any(keyword in name for keyword in NON_EMERGENCY_NAME_KEYWORDS):
+        return False
+
+    return amenity == "hospital" or healthcare == "hospital"
 
 def fetch_emergency_services(lat: float, lng: float, radius_km: float = 10.0) -> List[Dict]:
     """
@@ -30,10 +99,12 @@ def fetch_emergency_services(lat: float, lng: float, radius_km: float = 10.0) ->
     [out:json][timeout:25];
     (
       node["amenity"~"hospital|clinic|police|fire_station"]({bbox});
+      node["healthcare"="hospital"]({bbox});
       node["emergency"~"ambulance_station"]({bbox});
       node["shop"~"car_repair|tyres"]({bbox});
       
       way["amenity"~"hospital|clinic|police|fire_station"]({bbox});
+      way["healthcare"="hospital"]({bbox});
     );
     out center;
     """
@@ -55,9 +126,16 @@ def fetch_emergency_services(lat: float, lng: float, radius_km: float = 10.0) ->
             service_type = "unknown"
             if "amenity" in tags:
                 am = tags["amenity"]
-                if am in ["hospital", "clinic"]: service_type = "hospital"
+                if am in ["hospital", "clinic"]:
+                    if not is_emergency_care_candidate(tags):
+                        continue
+                    service_type = "hospital"
                 elif am == "police": service_type = "police"
                 elif am == "fire_station": service_type = "fire_station"
+            elif tags.get("healthcare") == "hospital":
+                if not is_emergency_care_candidate(tags):
+                    continue
+                service_type = "hospital"
             elif "emergency" in tags and tags["emergency"] == "ambulance_station":
                 service_type = "ambulance"
             elif "shop" in tags:
