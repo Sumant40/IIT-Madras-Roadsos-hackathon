@@ -25,10 +25,17 @@ The app extracts the needed service and location, geocodes the place in India, f
 - Light/dark theme toggle with saved preference.
 - PWA service worker for cached emergency API responses.
 
+## Android app
+
+Native **Kotlin + Jetpack Compose** client in [`app/`](app/) on git branch **`app`**. It calls the same FastAPI backend as the web frontend (chat, accident mode, maps, SOS card, share location).
+
+See [`app/README.md`](app/README.md) for Android Studio setup, `API_BASE_URL` for emulator/device, and Maps API key.
+
 ## Tech Stack
 
 | Layer | Technology |
 | --- | --- |
+| Android | Kotlin, Jetpack Compose, Retrofit, Google Maps Compose |
 | Frontend | React, Vite, Leaflet, react-leaflet, Axios, lucide-react |
 | Backend | FastAPI, SQLAlchemy, GeoAlchemy2 |
 | Database | PostgreSQL + PostGIS |
@@ -54,6 +61,8 @@ The app extracts the needed service and location, geocodes the place in India, f
 │       ├── App.jsx
 │       ├── index.css
 │       └── components/
+├── app/                 # Android app (git branch: app)
+│   └── mobile/
 ├── docker-compose.yml
 └── README.md
 ```
