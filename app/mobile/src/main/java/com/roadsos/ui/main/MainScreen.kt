@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -128,6 +129,20 @@ fun MainScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHost) },
+        bottomBar = {
+            if (state.activeTab == MainTab.CHAT) {
+                ChatBottomBar(
+                    state = state,
+                    shareCenter = shareCenter,
+                    onInputChange = viewModel::onInputChange,
+                    onSend = viewModel::sendMessage,
+                    onShare = {
+                        shareCenter?.let { shareEmergencyLink(context, it.lat, it.lng) }
+                    },
+                    onSosCard = viewModel::openSosCard,
+                )
+            }
+        },
         floatingActionButton = {
             val ambulance = state.countryInfo?.numbers?.ambulance ?: "112"
             FloatingActionButton(
@@ -171,15 +186,8 @@ fun MainScreen(
                     modifier = Modifier.fillMaxSize(),
                     state = state,
                     listState = listState,
-                    shareCenter = shareCenter,
                     origin = origin,
-                    onInputChange = viewModel::onInputChange,
-                    onSend = viewModel::sendMessage,
                     onSelectService = viewModel::selectService,
-                    onShare = {
-                        shareCenter?.let { shareEmergencyLink(context, it.lat, it.lng) }
-                    },
-                    onSosCard = viewModel::openSosCard,
                     onCall = { dialNumber(context, it) },
                     onDirections = { openDirections(context, it, origin) },
                 )
@@ -282,13 +290,8 @@ fun MapLegendOverlay(modifier: Modifier = Modifier) {
 private fun ChatTab(
     state: MainUiState,
     listState: androidx.compose.foundation.lazy.LazyListState,
-    shareCenter: LatLng?,
     origin: LatLng?,
-    onInputChange: (String) -> Unit,
-    onSend: () -> Unit,
     onSelectService: (ServiceItem) -> Unit,
-    onShare: () -> Unit,
-    onSosCard: () -> Unit,
     onCall: (String) -> Unit,
     onDirections: (ServiceItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -324,47 +327,65 @@ private fun ChatTab(
                 FlatResults(state.services, state.selectedServiceId, onSelectService, onCall, onDirections)
             }
         }
+    }
+}
 
-        if (shareCenter != null || state.services.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (shareCenter != null) {
-                    TextButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(4.dp))
-                        Text("Share location")
+@Composable
+private fun ChatBottomBar(
+    state: MainUiState,
+    shareCenter: LatLng?,
+    onInputChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onShare: () -> Unit,
+    onSosCard: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding(),
+        ) {
+            if (shareCenter != null || state.services.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (shareCenter != null) {
+                        TextButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("Share location")
+                        }
                     }
-                }
-                if (state.services.isNotEmpty()) {
-                    TextButton(onClick = onSosCard, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.CreditCard, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("SOS Card")
+                    if (state.services.isNotEmpty()) {
+                        TextButton(onClick = onSosCard, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.CreditCard, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("SOS Card")
+                        }
                     }
                 }
             }
-        }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = state.input,
-                onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("E.g., I just had an accident...") },
-                singleLine = true,
-                enabled = !state.isLoading,
-            )
-            IconButton(onClick = onSend, enabled = !state.isLoading) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = state.input,
+                    onValueChange = onInputChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("E.g., I just had an accident...") },
+                    singleLine = true,
+                    enabled = !state.isLoading,
+                )
+                IconButton(onClick = onSend, enabled = !state.isLoading) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                }
             }
         }
     }
