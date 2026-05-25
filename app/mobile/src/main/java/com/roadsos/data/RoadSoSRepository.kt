@@ -12,7 +12,7 @@ import com.roadsos.data.model.SosCardCache
 import com.roadsos.data.model.SuggestedAction
 
 class RoadSoSRepository(context: Context) {
-    private val api = ApiClient.api
+    private val api get() = ApiClient.api
     private val sosStore = SosCardStore(context.applicationContext)
 
     suspend fun health() = api.health()

@@ -11,11 +11,16 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
-val apiBaseUrl = (localProperties.getProperty("API_BASE_URL") ?: "http://10.0.2.2:8000")
+fun cleanLocalProperty(name: String, defaultValue: String): String =
+    (localProperties.getProperty(name) ?: defaultValue)
+        .substringBefore(" #")
+        .trim()
+
+val apiBaseUrl = cleanLocalProperty("API_BASE_URL", "http://10.0.2.2:8000")
     .replace("\"", "\\\"")
-val webShareBase = (localProperties.getProperty("WEB_SHARE_BASE") ?: "http://10.0.2.2:5173")
+val webShareBase = cleanLocalProperty("WEB_SHARE_BASE", "http://10.0.2.2:5173")
     .replace("\"", "\\\"")
-val mapsApiKey = localProperties.getProperty("MAPS_API_KEY") ?: ""
+val mapsApiKey = cleanLocalProperty("MAPS_API_KEY", "")
 
 android {
     namespace = "com.roadsos"
