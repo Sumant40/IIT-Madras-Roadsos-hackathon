@@ -26,7 +26,8 @@ RUNTIME / TOOLING REQUIREMENTS
   Python 3.10+ (backend)
   Node.js 18+ and npm (frontend)
   Docker Desktop (PostGIS database)
-  JDK 17 (Android builds; Java 25 is not supported by current Gradle/AGP)
+  JDK 17 or Android Studio bundled JBR 21 (Android builds; Java 25 is not
+    supported by current Gradle/Kotlin tooling)
   Android Studio Ladybug 2024.2+ (recommended for app/)
   Android SDK 35, min device API 26 (Android 8.0)
 
@@ -100,6 +101,12 @@ ANDROID — Gradle dependencies (app/mobile/build.gradle.kts)
   Local config: app/local.properties (gitignored)
     sdk.dir, MAPS_API_KEY, API_BASE_URL, WEB_SHARE_BASE
 
+  Network security:
+    app/mobile/src/main/res/xml/network_security_config.xml keeps release/main
+      cleartext HTTP restricted to emulator/localhost hosts.
+    app/mobile/src/debug/res/xml/network_security_config.xml permits cleartext
+      HTTP for debug builds so a physical phone can reach a LAN FastAPI server.
+
 --------------------------------------------------------------------------------
 INFRASTRUCTURE
 --------------------------------------------------------------------------------
@@ -131,6 +138,8 @@ API ENDPOINTS (shared by web and Android)
   Default dev URLs:
     Backend:  http://localhost:8000  (host) | http://10.0.2.2:8000 (emulator)
     Frontend: http://localhost:5173  | http://10.0.2.2:5173 (emulator)
+    Physical Android device: http://YOUR_LAN_IP:8000, with backend started on
+      host 0.0.0.0 rather than 127.0.0.1.
 
 --------------------------------------------------------------------------------
 ASSUMPTIONS
@@ -161,6 +170,8 @@ Clients
   - Android uses ACTION_DIAL (no CALL_PHONE permission) for emergency calls.
   - Cleartext HTTP to local backend is allowed in Android debug builds only.
   - Physical device testing requires backend on 0.0.0.0 and LAN IP in API_BASE_URL.
+  - Android chat controls live in the Scaffold bottomBar so the floating SOS
+    action stays above the input/send row and does not cover it.
 
 Security & production
   - config.py, .env, and local.properties are not committed.
